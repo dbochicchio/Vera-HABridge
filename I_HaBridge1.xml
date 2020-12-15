@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<implementation>
+	<functions>
+		function startupPlugin(devNum)
+			luup.log("HABridge1 starting...")
+			HABridge1 = require("L_HABridge1")
+			HABridge1Watch = HABridge1.statusWatch
+			return HABridge1.startPlugin(devNum)
+		end
+	</functions>
+	<startup>startupPlugin</startup>
+	<actionList>
+		<action>
+			<serviceId>urn:bochicchio-com:serviceId:HaBridge1</serviceId>
+			<name>UpdateStatus</name>
+			<run>
+				HABridge1.updateStatus(lul_device, true)
+				return 4,0
+			</run>
+		</action>
+	</actionList>
+</implementation>

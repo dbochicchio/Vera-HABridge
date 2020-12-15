@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+	<specVersion>
+		<major>1</major>
+		<minor>0</minor>
+	</specVersion>
+	<device>
+		<deviceType>urn:bochicchio-com:device:HaBridge:1</deviceType>
+		<staticJson>D_ComboDevice1.json</staticJson>
+		<Category_Num>15</Category_Num>
+		<friendlyName>HaBridge</friendlyName>
+		<manufacturer></manufacturer>
+		<manufacturerURL>https://github.com/dbochicchio/Vera-HaBridge</manufacturerURL>
+		<modelDescription>HaBridge plug-in</modelDescription>
+		<modelName></modelName>
+		<modelNumber>1.0</modelNumber>
+		<protocol>cr</protocol>
+		<handleChildren>1</handleChildren>
+		<serviceList>
+			<service>
+				<serviceType>urn:schemas-bochicchio-com:serviceId:HaBridge1</serviceType>
+				<serviceId>urn:bochicchio-com:serviceId:HaBridge1</serviceId>
+				<SCPDURL>S_HaBridge1.xml</SCPDURL>
+			</service>
+		</serviceList>
+		<implementationList>
+			<implementationFile>I_HaBridge1.xml</implementationFile>
+		</implementationList>
+	</device>
+</root>
