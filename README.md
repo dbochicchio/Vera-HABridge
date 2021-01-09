@@ -13,7 +13,7 @@ This plug-in is a beta and is not yet available on App Store.
 To install, simply upload the files in the release package, using Vera's feature (Go to *Apps*, then *Develop Apps*, then *Luup files* and select *Upload* - multiple files can be selected when uploading).
 To create a new device under Vera, go to *Apps*, then *Develop Apps* and *Create device*.
 
-> If you're under openLuup, you'd already know how to do ;)
+> If you're under openLuup, you'd already know how to do it ;)
 
 - Upnp Device Filename/Device File: *D_HaBridge1.xml*
 - Upnp Implementation Filename/Implementation file: *I_HaBridge1.xml*
@@ -24,17 +24,20 @@ You'll need to set the IP of your HA-Bridge instance in the IP attribute under y
 
 ## How to recognize a device and supported devices
 
-Since HA-Bridge could be used to control different kind of devices, the plug-in will recognize only devices mapped under HA-Bridge as "Vera Device" or "Vera Scene" for "Map Type".
+Since HA-Bridge could be used to control different kinds of devices, the plug-in will recognize only devices mapped under HA-Bridge as "Vera Device" or "Vera Scene" for "Map Type".
 
 ![Configuration example](Docs/file.png)
 
 *Map ID* should correspond to Vera's device ID and will be used to correlate the bridge device with the Vera device. This is the standard behaviour if the device is created via HA-Bridge's wizard.
 
-Due to the way Ha-Bridge is handling updates, only lights and dimmers (lights and roller shutters). Colors are unfortunately not supported at the moment.
+Lights and dimmers (lights and roller shutters), as well as colored lights, are supported (v 0.11+).
+Scenes are always set as "turned on" and not synced.
 
 ## Force update
 
-The update is performed by
+The update of the bridge is performed automatically by watching the corresponding variables.
+
+It's very lightweight and will not do any polling: it will just update the bridge when the light is turned on, dimmed or the color is changed.
 
 Just call *UpdateStatus* on *urn:bochicchio-com:serviceId:HaBridge1*.
 
