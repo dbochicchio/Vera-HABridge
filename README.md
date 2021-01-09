@@ -1,3 +1,5 @@
+# HA-Bridge plug-in for Luup
+
 Are you using [HA-Bridge](https://github.com/bwssytems/ha-bridge/) to access your Vera's (or openLuup's) devices, but you're tired of status being out-of-sync?
 
 This plug-in will give you the ability to push updates to your HA-Bridge.
