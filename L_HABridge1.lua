@@ -1,7 +1,13 @@
+------------------------------------------------------------------------
+-- Copyright (c) 2020-2021 Daniele Bochicchio
+-- License: MIT License
+-- Source Code: https://github.com/dbochicchio/Vera-HaBridge
+------------------------------------------------------------------------
+
 module("L_HABridge1", package.seeall)
 
-local _PLUGIN_NAME = "HABridge"
-local _PLUGIN_VERSION = "0.10"
+local _PLUGIN_NAME = "HA-Bridge"
+local _PLUGIN_VERSION = "0.11"
 
 local debugMode = false
 
@@ -171,6 +177,148 @@ local function formatDateTime(v)
 		)
 end
 
+function safeCall(devNum, call)
+	local function err(x)
+		local s = string.dump(call)
+		L(devNum, "LUA error: %1 - %2", x, s)
+	end
+
+	local s, r, e = xpcall(call, err)
+	return r
+end
+
+-- COLORS - Thanks amg0 - added from ALTHue
+local function round(num, numDecimalPlaces)
+	local mult = 10^(numDecimalPlaces or 0)
+	return math.floor(num * mult + 0.5) / mult
+end
+
+local function cieToRgb(x, y, brightness)
+	local function enforceByte(r)
+		return (r<0) and 0 or (r>255) and 255 or r
+	end
+
+	-- //Set to maximum brightness if no custom value was given (Not the slick ECMAScript 6 way for compatibility reasons)
+	-- debug(string.format("cie_to_rgb(%s,%s,%s)",x, y, brightness or ""))
+	x = tonumber(x)
+	y = tonumber(y)
+	brightness = tonumber(brightness)
+	
+	if (brightness == nil) then brightness = 254 end
+
+	local z = 1.0 - x - y
+	local Y = math.floor( 100 * (brightness / 254)) /100	-- .toFixed(2);
+	local X = (Y / y) * x
+	local Z = (Y / y) * z
+
+	-- //Convert to RGB using Wide RGB D65 conversion
+	local red 	=  X * 1.656492 - Y * 0.354851 - Z * 0.255038
+	local green	= -X * 0.707196 + Y * 1.655397 + Z * 0.036152
+	local blue 	=  X * 0.051713 - Y * 0.121364 + Z * 1.011530
+
+	-- //If red, green or blue is larger than 1.0 set it back to the maximum of 1.0
+	if (red > blue) and (red > green) and (red > 1.0) then
+		green = green / red
+		blue = blue / red
+		red = 1.0
+	elseif (green > blue) and (green > red) and (green > 1.0) then
+		red = red / green
+		blue = blue / green
+		green = 1.0
+	elseif (blue > red) and (blue > green) and (blue > 1.0) then
+		red = red / blue
+		green = green / blue
+		blue = 1.0
+	end
+
+	-- //Reverse gamma correction
+	red 	= (red <= 0.0031308) and (12.92 * red) or (1.0 + 0.055) * (red^(1.0 / 2.4)) - 0.055
+	green 	= (green <= 0.0031308) and (12.92 * green) or (1.0 + 0.055) * (green^(1.0 / 2.4)) - 0.055
+	blue 	= (blue <= 0.0031308) and (12.92 * blue) or (1.0 + 0.055) * (blue^(1.0 / 2.4)) - 0.055
+
+	-- //Convert normalized decimal to decimal
+	red 	= round(red * 255)
+	green 	= round(green * 255)
+	blue 	= round(blue * 255)
+	return enforceByte(red), enforceByte(green), enforceByte(blue)
+end
+
+local function hsbToRgb(h, s, v) 
+	h = tonumber(h or 0) / 65535
+	s = tonumber(s or 0) / 254
+	v = tonumber(v or 0) / 254
+	local r, g, b, i, f, p, q, t
+	i = math.floor(h * 6)
+	f = h * 6 - i
+	p = v * (1 - s)
+	q = v * (1 - f * s)
+	t = v * (1 - (1 - f) * s)
+	if i==0 then
+		r = v
+		g = t
+		b = p
+	elseif i==1 then
+		r = q
+		g = v
+		b = p
+	elseif i==2 then
+		r = p
+		g = v
+		b = t
+	elseif i==3 then
+		r = p
+		g = q
+		b = v
+	elseif i==4 then
+		r = t
+		g = p
+		b = v
+	elseif i==5 then
+		r = v
+		g = p
+		b = q
+	end
+	return round(r * 255), round(g * 255), round(b * 255)
+end
+
+local function rgbToCie(red, green, blue)
+	-- Apply a gamma correction to the RGB values, which makes the color more vivid and more the like the color displayed on the screen of your device
+	red = tonumber(red)
+	green = tonumber(green)
+	blue = tonumber(blue)
+	red	= (red > 0.04045) and ((red + 0.055) / (1.0 + 0.055))^2.4 or (red / 12.92)
+	green = (green > 0.04045) and ((green + 0.055) / (1.0 + 0.055))^2.4 or (green / 12.92)
+	blue = (blue > 0.04045) and ((blue + 0.055) / (1.0 + 0.055))^2.4 or (blue / 12.92)
+
+	-- //RGB values to XYZ using the Wide RGB D65 conversion formula
+	local X = red * 0.664511 + green * 0.154324 + blue * 0.162028
+	local Y = red * 0.283881 + green * 0.668433 + blue * 0.047685
+	local Z	= red * 0.000088 + green * 0.072310 + blue * 0.986039
+
+	-- //Calculate the xy values from the XYZ values
+	local x1 = math.floor( 10000 * (X / (X + Y + Z)) )/10000  --.toFixed(4);
+	local y1 = math.floor( 10000 * (Y / (X + Y + Z)) )/10000  --.toFixed(4);
+
+	return x1, y1
+end
+
+function fromHueToVeraColor(state)
+	local w,d,r,g,b=0,0,0,0,0
+	if state.colormode == "xy" and state.xy ~= nil then
+		r,g,b = cieToRgb(state.xy[1], state.xy[2], nil)
+	elseif state.colormode == "hs" then
+		r,g,b = hsbToRgb(state.hue, state.sat, state.bri)
+	elseif state.colormode == "ct" and state.ct ~= nil then
+		local kelvin = math.floor(((1000000/state.ct)/100)+0.5)*100
+		w = (kelvin < 5450) and (math.floor((kelvin-2000)/13.52) + 1) or 0
+		d = (kelvin > 5450) and (math.floor((kelvin-5500)/13.52) + 1) or 0
+	else
+		return nil
+	end
+	return string.format("0=%s,1=%s,2=%s,3=%s,4=%s", w, d, r, g, b)
+end
+
+-- HTTP
 local function httpCall(devNum, url, method, additionalHeaders, payload, onSuccess, onFailure)
 	local ltn12 = require("ltn12")
 	local _, async = pcall(require, "http_async")
@@ -277,49 +425,91 @@ function statusWatch(devNum, sid, var, oldVal, newVal)
 
 	if oldVal == newVal then return end
 
-	updateDeviceStatus(masterID, devNum, -1, -1)
+	updateDeviceStatus(masterID, devNum, -1, -1, nil)
 end
 
-function updateBridge(masterID, devNum, internalId, currentStatus, currentBri)
+function updateBridge(masterID, devNum, internalId, currentStatus, currentBri, currentColor)
+	L(masterID, "updateBridge(%1,%2,%3,%4,%5,%6)", masterID, devNum, internalId, currentStatus, currentBri, currentColor)
+	local p = {
+		on = currentStatus == "1" and "true" or "false", 
+		reachable = true
+	}
+
+	if currentStatus == "1" then
+		p.bri = string.format("%.0f", (currentBri or 0) == 0 and 1 or currentBri)
+	end
+
+	if currentColor ~= nil then
+		local parts = split(currentColor, ',')
+		local w, d = tonumber(split(parts[1], '=')[2]), tonumber(split(parts[2], '=')[2])
+		
+		if w == 0 and d == 0 then
+			local x, y = rgbToCie(split(parts[3], '=')[2], split(parts[4], '=')[2], split(parts[5], '=')[2])
+			local nan = tostring(0/0)
+			if tostring(x) ~= nan and tostring(y) ~= nan then
+				p.colormode = "xy"
+				p.xy = { string.format("%4f", x), string.format("%4f", y)}
+				p.sat = 254 -- TODO: get saturation?
+				p.ct = 153
+			end
+		else
+			-- color temperature
+			local kelvin = math.floor((d*3500/255)) + ((w>0) and 5500 or 2000)
+			local mired = math.floor(1000000/kelvin)
+			local loadLevelStatus = getVarNumeric(DIMMERSID, "LoadLevelStatus", 100, devNum)
+			local bri = math.floor(255*loadLevelStatus/100)
+
+			p.colormode = "ct"
+			p.bri = bri
+			p.ct = mired
+		end
+	end
+
 	local endpoint = string.format(COMMANDS.endpoints.updateStatus, "vera", tostring(internalId))
-	sendDeviceCommand(masterID, endpoint, "PUT", {on = currentStatus == "1" and "true" or "false", bri = string.format("%.0f", currentBri)},
-	function() -- success
-		D(masterID, '#%1 - Update status: success!', devNum)
-	end,
-	function(r)-- failed
-		-- TODO: more logging?
-		D(masterID, '#%1 - Update status failed: %2', devNum, r)
-	end)
+	sendDeviceCommand(masterID, endpoint, "PUT", p,
+		function() -- success
+			D(masterID, '#%1 - updateBridge: success', devNum)
+		end,
+		function(r)-- failed
+			-- TODO: more logging?
+			D(masterID, '#%1 - updateBridge: failed - %2', devNum, r)
+		end)
 end
 
-function updateDeviceStatus(masterID, devNum, bridgeStatus, bridgeBri)
-	D(masterID, "updateDeviceStatus(%1,%2,%3,%4)", masterID, devNum, bridgeStatus, bridgeBri)
+function updateDeviceStatus(masterID, devNum, bridgeStatus, bridgeBri, bridgeColor)
+	safeCall(masterID, function()
+		D(masterID, "updateDeviceStatus(%1,%2,%3,%4,%5)", masterID, devNum, bridgeStatus, bridgeBri, bridgeColor)
 
-	local internalId = deviceMap[devNum] -- get mapped id
+		local internalId = deviceMap[devNum] -- get mapped id
 
-	-- current status
-	local currentStatus = getVar(SWITCHSID, "Status", "0", devNum)
+		-- current status
+		local currentStatus = getVar(SWITCHSID, "Status", "0", devNum)
 
-	-- current brightness
-	local currentBri = getVar(DIMMERSID, "LoadLevelStatus", "-1", devNum)
+		-- current brightness
+		local currentBri = getVar(DIMMERSID, "LoadLevelStatus", "-1", devNum)
 
-	if currentBri == "-1" or currentStatus == "0" then
-		-- special case for non dimmable lights -- alexa wants 1 as minimum value
-		currentBri = currentStatus == "0" and "1" or "100"
-	end
+		if currentBri == "-1" then
+			-- special case for non dimmable lights -- alexa wants 1 as minimum value
+			currentBri = currentStatus == "0" and "0" or "100"
+		end
 
-	-- compute bri on a scale of 1/254
-	currentBri = tonumber(currentBri) * 254 / 100
+		-- compute bri on a scale of 1/254
+		currentBri = tonumber(currentBri) * 254 / 100
 
-	D(masterID, "#%1 - current status: %2 - bridge status: %3", devNum, currentStatus, bridgeStatus)
-	D(masterID, "#%1 - current bri: %2 - bridge bri: %3", devNum, currentBri, bridgeBri)
+		-- colors, if supported
+		local currentColor = getVar(COLORSID, "CurrentColor", nil, devNum)
 
-	-- status not in sync, update bridge
-	if force or currentStatus ~= bridgeStatus or currentBri ~= bridgeBri then
-		updateBridge(masterID, devNum, internalId, currentStatus, currentBri)
-	else
-		D(masterID, "#%1 - Already up to date", devNum)
-	end
+		D(masterID, "#%1 - current status: %2 - bridge status: %3", devNum, currentStatus, bridgeStatus)
+		D(masterID, "#%1 - current bri: %2 - bridge bri: %3", devNum, currentBri, bridgeBri)
+		D(masterID, "#%1 - current color: %2 - bridge color: %3", devNum, currentColor, bridgeColor)
+
+		-- status not in sync, update bridge
+		if force or currentStatus ~= bridgeStatus or currentBri ~= bridgeBri or currentColor ~= bridgeColor then
+			updateBridge(masterID, devNum, internalId, currentStatus, currentBri, currentColor)
+		else
+			D(masterID, "#%1 - Already up to date", devNum)
+		end
+	end)
 end
 
 function updateStatus(devNum, force)
@@ -332,49 +522,78 @@ function updateStatus(devNum, force)
 		function(r)
 			L(devNum, "updateStatus: %1", r)
 			local jsonResponse, _, err = json.decode(r)
+			local mappedDevices = ""
 
 			if not err then
 				local devices = jsonResponse
-				local veraCount = 0
+				local handledDevices = 0
+				local handledScenes = 0
+
 				for _, device in ipairs(jsonResponse) do
 					if device.mapType == "veraDevice" then -- get only lights
 						local devId = tonumber(device.mapId)
 						if devId ~= nil then
 							local internalDevId = devId+deviceNumberStartAt	
-							deviceMap[internalDevId] = device.id -- save mapping
+							if luup.devices[internalDevId] == nil or device.id == nil then
+								L(devNum, "Cannot find #%1", internalDevId)
+							else
+								deviceMap[internalDevId] = device.id -- save mapping
 
-							D(devNum, 'Discovery: #%1 - %2', devId, luup.devices[internalDevId].description)
+								D(devNum, 'Discovery: #%1 - %2 (#%3)', internalDevId, luup.devices[internalDevId].description, device.id)
 
-							-- watches
-							if not watchesReady then
-								luup.variable_watch("HABridge1Watch", SWITCHSID, "Status", internalDevId)
-								luup.variable_watch("HABridge1Watch", DIMMERSID, "LoadLevelStatus", internalDevId)
+								-- get bridge values
+								local bridgeStatus = device.deviceState.on == "true" and "1" or "0"
+								local bridgeBri = tonumber(device.deviceState.bri or "-1")
+								local bridgeColor = fromHueToVeraColor(device.deviceState)
+							
+								-- set watches
+								if not watchesReady then
+									luup.variable_watch("HABridge1Watch", SWITCHSID, "Status", internalDevId)
 
-								D(devNum, 'Watch added for #%1 - %2', internalDevId, luup.devices[internalDevId].description)
+									if bridgeBri >-1 then
+										luup.variable_watch("HABridge1Watch", DIMMERSID, "LoadLevelStatus", internalDevId)
+									end
+
+									if device.deviceState.colormode ~= nil then
+										luup.variable_watch("HABridge1Watch", COLORSID, "CurrentColor", internalDevId)
+									end
+
+									D(devNum, 'Watch added for #%1 - %2 (#%3)', internalDevId, luup.devices[internalDevId].description, device.id)
+
+									mappedDevices = mappedDevices .. tostring(internalDevId) .. "-" .. tostring(device.id) .. " \n" 
+								end
+
+								-- update immediately on startup
+								updateDeviceStatus(devNum, internalDevId, bridgeStatus, bridgeBri, bridgeColor)
+
+								handledDevices = handledDevices + 1
 							end
-
-							-- update immediately on startup
-							local bridgeStatus = device.deviceState.on == "true" and "1" or "0"
-							local bridgeBri = tonumber(device.deviceState.bri)
-							updateDeviceStatus(devNum, internalDevId, bridgeStatus, bridgeBri)
-
-							veraCount = veraCount + 1
 						end
-					elseif device.map == "veraScene" then -- get only scenes
+					elseif device.mapType == "veraScene" then -- get only scenes
 						local devId = tonumber(device.mapId)
 						if devId ~= nil then
 							local internalDevId = devId+deviceNumberStartAt	
-							updateBridge(masterID, devNum, internalDevId, 0, 1)
+
+							D(devNum, 'Discovery (scene): #%1 (#%2)', internalDevId, device.id)
+							updateBridge(masterID, devNum, internalDevId, 0, 1, nil)
+
+							handledScenes = handledScenes + 1
 						end
+					else
+						D(devNum, 'Discovery [IGNORED]: #%1 (#%2) - %3', device.mapType, device.id, device)
 					end
 				end
 
-				setVar(ALTUISID, "DisplayLine1", "Devices: " .. tostring(#devices) .. ' - Vera: ' .. tostring(veraCount), devNum)
+				setVar(ALTUISID, "DisplayLine1", "Devices: " .. tostring(#devices) .. ' - Mapped: ' .. tostring(handledDevices).. ' - Scenes: ' .. tostring(handledScenes), devNum)
 
 				watchesReady = true
 			end
 
-			setVar(ALTUISID, "DisplayLine2", "Last Update: " .. formatDateTime(os.time()), devNum)
+			setVar(ALTUISID, "DisplayLine2", "Last Global Sync: " .. formatDateTime(os.time()), devNum)
+			setVar(MYSID, "DeviceMapping", mappedDevices, devNum)
+
+			-- update after startup
+			updateDeviceStatus(devNum, internalDevId, bridgeStatus, bridgeBri, bridgeColor)
 		end,
 		function() -- failure
 			-- TODO: more logging?

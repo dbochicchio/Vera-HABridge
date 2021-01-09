@@ -24,7 +24,7 @@ You'll need to set the IP of your HA-Bridge instance in the IP attribute under y
 
 ## How to recognize a device and supported devices
 
-Since HA-Bridge could be used to control different kind of devices, the plug-in will recognize only devices mapped under HA-Bridge as "Vera Device" for "Map Type" and "Switch" as "Device Type".
+Since HA-Bridge could be used to control different kind of devices, the plug-in will recognize only devices mapped under HA-Bridge as "Vera Device" or "Vera Scene" for "Map Type".
 
 ![Configuration example](Docs/file.png)
 
@@ -37,6 +37,10 @@ Due to the way Ha-Bridge is handling updates, only lights and dimmers (lights an
 The update is performed by
 
 Just call *UpdateStatus* on *urn:bochicchio-com:serviceId:HaBridge1*.
+
+```
+luup.call_action("urn:bochicchio-com:serviceId:HaBridge1", "UpdateStatus", {}, 384)
+```
 
 ## Use with bridged Veras on openLuup
 
