@@ -54,6 +54,10 @@ This will work if you're calling Vera directly for actions (ie: device number *1
 
 If you have more than one bridge or something else giving you different numbering, this setting will make it work regardless of the mapped id.
 
-## Support
+### Support
+Before asking for support, please:
+ - change *DebugMode* variable to 1 (on the device itself, not on the master)
+ - repeat your problem and capture logs
+ - logs could be captured via SSH or by navigating to `http://VeraIP/cgi-bin/cmh/log.sh?Device=LuaUPnP`. [More Info](http://wiki.micasaverde.com/index.php/Logs)
 
 If you need help, visit [SmartHome.Community](https://smarthome.community/) and tag me (therealdb).
