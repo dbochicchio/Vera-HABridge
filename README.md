@@ -53,3 +53,7 @@ If you're running the plug-in with a bridged Vera, set *DeviceNumberStartAt* to 
 This will work if you're calling Vera directly for actions (ie: device number *18*), but the plug-in is running on openLuup (where device id will be *10018*) or on a bridge Vera.
 
 If you have more than one bridge or something else giving you different numbering, this setting will make it work regardless of the mapped id.
+
+## Support
+
+If you need help, visit [SmartHome.Community](https://smarthome.community/) and tag me (therealdb).
